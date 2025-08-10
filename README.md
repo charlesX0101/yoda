@@ -25,12 +25,14 @@ Windows is not officially supported. WSL users might run the Linux script with s
 
 # Linux:
 ```
-curl -fsSL https://raw.githubusercontent.com/charlesx0101/yoda-llm/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/charlesX0101/yoda/main/install.sh | bash
+
 ```
 
 # macOS:
 ```
-curl -fsSL https://raw.githubusercontent.com/charlesx0101/yoda-llm/main/install_macos.sh | bash
+curl -fsSL https://raw.githubusercontent.com/charlesX0101/yoda/main/install_macos.sh | bash
+
 ```
 
 ## System Requirements:
