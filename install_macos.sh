@@ -5,7 +5,19 @@
 # Your Offline Dialogue Assistant
 #==================================================
 
-set -e
+set -euo pipefail
+
+# Ensure interactive prompts work even when run via: curl ... | bash
+if [ ! -t 0 ]; then
+  exec </dev/tty
+fi
+
+prompt() {
+  # usage: var=$(prompt "Message: ")
+  local __ans
+  read -r -p "$1" __ans
+  printf '%s' "$__ans"
+}
 
 INSTALL_DIR="$HOME/.local/bin"
 TARGET="$INSTALL_DIR/yoda"
@@ -23,7 +35,7 @@ echo "1) Install YODA-LLM"
 echo "2) Uninstall YODA-LLM"
 echo "3) Quit"
 echo
-read -p "Choose an option [1-3]: " CHOICE
+CHOICE="$(prompt 'Choose an option [1-3]: ')"
 
 #--- Uninstall ---#
 if [[ "$CHOICE" == "2" ]]; then
@@ -46,8 +58,8 @@ fi
 #--- Check for Homebrew ---#
 if ! command -v brew &>/dev/null; then
   echo "[warn] Homebrew is not installed."
-  read -p "Install Homebrew now? (Y/n): " INSTALL_BREW
-  if [[ "$INSTALL_BREW" =~ ^[Yy]?$ ]]; then
+  INSTALL_BREW="$(prompt 'Install Homebrew now? (Y/n): ')"
+  if [[ "$INSTALL_BREW" =~ ^([Yy]|)$ ]]; then
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
   else
     echo "Please install Homebrew manually and re-run this script."
@@ -77,16 +89,18 @@ echo "       CODE_MODEL = $CODE_MODEL"
 
 #--- Pull Models ---#
 echo "[info] Ensuring models are available..."
-if ! ollama list | grep -q "$ASK_MODEL"; then
+if ! ollama list | awk '{print $1}' | grep -qx "$ASK_MODEL"; then
   echo "[+] Pulling $ASK_MODEL..."
+  # keep original behavior: trigger download by running once
   ollama run "$ASK_MODEL" <<< "Hello" || {
     echo "[error] Failed to load $ASK_MODEL"
     exit 1
   }
 fi
 
-if ! ollama list | grep -q "$CODE_MODEL"; then
+if ! ollama list | awk '{print $1}' | grep -qx "$CODE_MODEL"; then
   echo "[+] Pulling $CODE_MODEL..."
+  # keep original behavior: trigger download by running once
   ollama run "$CODE_MODEL" <<< "Hello" || {
     echo "[error] Failed to load $CODE_MODEL"
     exit 1
@@ -96,6 +110,7 @@ fi
 #--- Deploy Yoda Script ---#
 cat > "$TARGET" <<EOF
 #!/bin/bash
+set -euo pipefail
 
 PID_FILE="/tmp/ollama_pid"
 
@@ -105,8 +120,12 @@ start_ollama() {
   else
     echo "Waking up... your assistant is."
     nohup ollama serve >/dev/null 2>&1 &
-    echo \$! > "\$PID_FILE"
-    echo "Started, it has. PID: \$(cat \$PID_FILE)"
+    echo \$! > "\$PID_FILE" || true
+    if [[ -f "\$PID_FILE" ]]; then
+      echo "Started, it has. PID: \$(cat "\$PID_FILE")"
+    else
+      echo "Started, it has."
+    fi
   fi
 }
 
@@ -114,15 +133,16 @@ stop_ollama() {
   if [[ -f "\$PID_FILE" ]]; then
     PID=\$(cat "\$PID_FILE")
     echo "Sleep now... the force shall rest."
-    kill "\$PID" && rm "\$PID_FILE"
+    kill "\$PID" 2>/dev/null || true
+    rm -f "\$PID_FILE"
     echo "Dreamless, the silence is."
   else
     echo "Mmm. No PID file. Hunt the phantom process, we must..."
-    pkill -f "ollama serve" && echo "Banished, the daemon is."
+    pkill -f "ollama serve" >/dev/null 2>&1 && echo "Banished, the daemon is." || echo "No daemon found."
   fi
 }
 
-case "\$1" in
+case "\${1:-}" in
   start)
     start_ollama
     ;;
@@ -131,14 +151,15 @@ case "\$1" in
     ;;
   ask)
     echo "Speak your thoughts. The Master listens..."
-    ollama run $ASK_MODEL
+    exec ollama run $ASK_MODEL
     ;;
   code)
     echo "Ah, code we must. Clever, you are..."
-    ollama run $CODE_MODEL
+    exec ollama run $CODE_MODEL
     ;;
   *)
     echo "Hmm. Use wisely: yoda [start|stop|ask|code]"
+    exit 1
     ;;
 esac
 EOF
@@ -150,8 +171,8 @@ if ! echo "$PATH" | grep -q "$HOME/.local/bin"; then
   echo
   echo "[warn] ~/.local/bin is not in your PATH."
   if [[ -f "$HOME/.zshrc" ]]; then
-    read -p "Add it to PATH in .zshrc? (Y/n): " ADD_PATH
-    if [[ "$ADD_PATH" =~ ^[Yy]?$ ]]; then
+    ADD_PATH="$(prompt 'Add it to PATH in .zshrc? (Y/n): ')"
+    if [[ "$ADD_PATH" =~ ^([Yy]|)$ ]]; then
       echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.zshrc"
       echo "[✓] Added to ~/.zshrc"
       echo "Restart your terminal or run: source ~/.zshrc"
@@ -169,3 +190,4 @@ echo
 echo "[✓] YODA-LLM installed to: $TARGET"
 echo "Try it: yoda start | yoda ask | yoda code | yoda stop"
 echo "Uninstall anytime: ./install_macos.sh and select option 2"
+
